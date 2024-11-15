@@ -19,9 +19,11 @@ namespace RevokeMsgPatcher
         private AppModifier modifier = null;
 
         private WechatModifier wechatModifier = null;
+        private WeixinModifier weixinModifier = null;
         private QQModifier qqModifier = null;
         private TIMModifier timModifier = null;
         private QQLiteModifier qqLiteModifier = null;
+        private QQNTModifier qqntModifier = null;
 
         private string thisVersion;
         private bool needUpdate = false;
@@ -31,6 +33,8 @@ namespace RevokeMsgPatcher
 
         Bag bag = null;
 
+        FormLiteLoaderQQNT formLiteLoader = null;
+
         public void InitModifier()
         {
             // 从配置文件中读取配置
@@ -39,14 +43,18 @@ namespace RevokeMsgPatcher
 
             // 初始化每个应用对应的修改者
             wechatModifier = new WechatModifier(bag.Apps["Wechat"]);
+            weixinModifier = new WeixinModifier(bag.Apps["Weixin"]);
             qqModifier = new QQModifier(bag.Apps["QQ"]);
             timModifier = new TIMModifier(bag.Apps["TIM"]);
             qqLiteModifier = new QQLiteModifier(bag.Apps["QQLite"]);
+            qqntModifier = new QQNTModifier(bag.Apps["QQNT"]);
 
             rbtWechat.Tag = wechatModifier;
+            rbtWeixin.Tag = weixinModifier;
             rbtQQ.Tag = qqModifier;
             rbtTIM.Tag = timModifier;
             rbtQQLite.Tag = qqLiteModifier;
+            rbtQQNT.Tag = qqntModifier;
 
             // 默认微信
             rbtWechat.Enabled = true;
@@ -168,7 +176,7 @@ namespace RevokeMsgPatcher
                 {
                     DialogResult result = MessageBox.Show(@"防撤回(老) 和 防撤回带提示(新) 两个功能二选一即可！
 
-1. 防撤回(老) 没有提示；
+1. 防撤回(老) 没有提示，新版本会出现撤回自己消息不断转圈的情况(实际撤回成功)；
 
 2. 防撤回带提示(新) 有撤回提示 但是存在以下问题：
     a. 如果正在和对方聊天时，对方撤回了消息，那撤回提示依然不会显示，只有在左侧预览窗有显示撤回，需要切换到和别人的聊天窗再切回来才能看到撤回提示，如果是把聊天拉出单独窗口，一直不会有撤回提示。
@@ -178,6 +186,8 @@ namespace RevokeMsgPatcher
 点击确定继续，点击取消重新选择！", "功能选择提示", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                     if (result != DialogResult.Yes)
                     {
+                        EnableAllButton(true);
+                        btnRestore.Enabled = modifier.BackupExists();
                         return;
                     }
                 }
@@ -218,7 +228,7 @@ namespace RevokeMsgPatcher
             {
                 modifier.Patch();
                 ga.RequestPageView($"{enName}/{version}/patch/succ", "补丁安装成功");
-                MessageBox.Show("补丁安装成功！");
+                MessageBox.Show("补丁安装成功！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (BusinessException ex)
             {
@@ -277,7 +287,16 @@ namespace RevokeMsgPatcher
             EnableAllButton(false);
             try
             {
-                bool succ = modifier.Restore();
+                bool succ;
+                if (rbtQQNT.Checked)
+                {
+                    succ = qqntModifier.Restore();
+                }
+                else
+                {
+                    succ = modifier.Restore();
+                }
+
                 if (succ)
                 {
                     MessageBox.Show("还原成功！");
@@ -331,6 +350,7 @@ namespace RevokeMsgPatcher
                         lblUpdatePachJson.ForeColor = Color.RoyalBlue;
 
                         wechatModifier.Config = newBag.Apps["Wechat"];
+                        weixinModifier.Config = newBag.Apps["Weixin"];
                         qqModifier.Config = newBag.Apps["QQ"];
                         timModifier.Config = newBag.Apps["TIM"];
                         qqLiteModifier.Config = newBag.Apps["QQLite"];
@@ -368,6 +388,8 @@ namespace RevokeMsgPatcher
 
             tips += "支持以下版本" + Environment.NewLine;
             tips += " ➯ 微信：" + wechatModifier.Config.GetSupportVersionStr() + Environment.NewLine;
+            tips += " ➯ 微信4.0：" + weixinModifier.Config.GetSupportVersionStr() + Environment.NewLine;
+            tips += " ➯ QQNT：" + qqntModifier.Config.GetSupportVersionStr() + Environment.NewLine;
             tips += " ➯ QQ：" + qqModifier.Config.GetSupportVersionStr() + Environment.NewLine;
             tips += " ➯ QQ轻聊版：" + qqLiteModifier.Config.GetSupportVersionStr() + Environment.NewLine;
             tips += " ➯ TIM：" + timModifier.Config.GetSupportVersionStr() + Environment.NewLine;
@@ -394,6 +416,10 @@ namespace RevokeMsgPatcher
             {
                 modifier = (WechatModifier)rbtWechat.Tag;
             }
+            else if (rbtWeixin.Checked)
+            {
+                modifier = (WeixinModifier)rbtWeixin.Tag;
+            }
             else if (rbtQQ.Checked)
             {
                 modifier = (QQModifier)rbtQQ.Tag;
@@ -406,6 +432,11 @@ namespace RevokeMsgPatcher
             {
                 modifier = (QQLiteModifier)rbtQQLite.Tag;
             }
+            else if (rbtQQNT.Checked)
+            {
+                modifier = (QQNTModifier)rbtQQNT.Tag;
+                ShowOrFocusFormLiteLoaderQQNT();
+            }
 
             EnableAllButton(true);
             // 触发了 txtPath_TextChanged 方法 已经调用了 InitEditorsAndUI(txtPath.Text);
@@ -413,6 +444,24 @@ namespace RevokeMsgPatcher
             txtPath.Text = modifier.FindInstallPath();
 
             ga.RequestPageView($"{GetCheckedRadioButtonNameEn()}/{lblVersion.Text}/switch", "切换标签页");
+        }
+
+        private void ShowOrFocusFormLiteLoaderQQNT()
+        {
+            if (formLiteLoader == null || formLiteLoader.IsDisposed)
+            {
+                formLiteLoader = new FormLiteLoaderQQNT();
+                formLiteLoader.Show();
+            }
+            else
+            {
+                if (formLiteLoader.WindowState == FormWindowState.Minimized)
+                {
+                    formLiteLoader.WindowState = FormWindowState.Normal;
+                }
+                formLiteLoader.BringToFront();
+                formLiteLoader.Focus();
+            }
         }
 
         private string GetCheckedRadioButtonNameEn()
@@ -432,6 +481,10 @@ namespace RevokeMsgPatcher
             else if (rbtQQLite.Checked)
             {
                 return "qqlite";
+            }
+            else if (rbtQQNT.Checked)
+            {
+                return "qqnt";
             }
 
             return "none";
